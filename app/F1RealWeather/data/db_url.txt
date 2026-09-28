@@ -1,1 +1,1 @@
-https://raw.githubusercontent.com/YOUR_GITHUB_NAME/YOUR_REPO/main/data/f1_weather_db.csv
+https://raw.githubusercontent.com/hammerwork/F1RealWeather/refs/heads/main/data/f1_weather_db.csv
