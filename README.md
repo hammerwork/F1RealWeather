@@ -1,7 +1,7 @@
 # F1 Real Weather
 
 A CSP Lua app for Assetto Corsa that loads the **real conditions of F1 qualifying, sprint and
-race sessions (2023 → today)** into [Pure Planner](https://www.overtake.gg/threads/pure-planner.291023/).
+race sessions (2023 → today)** into [Pure Planner](https://www.patreon.com/c/peterboese/posts).
 Every user's app downloads the shared database from this repository at start-up, and a GitHub
 Action keeps it up to date: forecasts before a Grand Prix, official timing data afterwards.
 
