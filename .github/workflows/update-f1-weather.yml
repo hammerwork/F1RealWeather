@@ -1,0 +1,41 @@
+name: Update F1 weather database
+
+on:
+  schedule:
+    - cron: '17 */3 * * *'     # every 3 hours (UTC): new sessions, fresher forecasts
+  workflow_dispatch:           # "Run workflow" button in the Actions tab
+
+permissions:
+  contents: write              # lets the job commit the updated CSV
+
+concurrency:
+  group: f1-weather
+  cancel-in-progress: false
+
+env:
+  WEATHER_DIR: .               # folder that contains tools/ and data/ (e.g. f1-real-weather)
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Update database
+        run: python "$WEATHER_DIR/tools/update_db.py" --out "$WEATHER_DIR/data/f1_weather_db.csv"
+
+      - name: Commit if changed
+        run: |
+          if git diff --quiet -- "$WEATHER_DIR/data/f1_weather_db.csv"; then
+            echo "No changes."
+            exit 0
+          fi
+          git config user.name  "f1-weather-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$WEATHER_DIR/data/f1_weather_db.csv"
+          git commit -m "Update F1 weather database ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+          git push
