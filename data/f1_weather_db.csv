@@ -215,9 +215,9 @@ year,round,meeting,circuit,country,session,local_start,utc_start,gmt_offset,stam
 2026,14,Spanish Grand Prix,Madring,Spain,Race,2026-09-13 15:00,2026-09-13T13:00:00Z,+02:00,1789311600,30.3,53.6,24,945.5,3.2,303,0,0,0,0,15,28.7,31.7,49.6,54.9,11369,timing,Madrid,madring;madrid
 2026,15,Azerbaijan Grand Prix,Baku,Azerbaijan,Qualifying,2026-09-25 16:00,2026-09-25T12:00:00Z,+04:00,1790352000,24.7,40.3,68,1023.9,5.8,27,0,0,65,0,18,23.9,24.8,34.5,41.3,11373,timing,Baku,baku;azerbaijan
 2026,15,Azerbaijan Grand Prix,Baku,Azerbaijan,Race,2026-09-26 15:00,2026-09-26T11:00:00Z,+04:00,1790434800,26.4,45.8,59.3,1023,4.3,49,0,0,12,0,16,26,26.6,,48.1,11377,timing,Baku,baku;azerbaijan
-2026,16,Bahrain Grand Prix,Kuala Lumpur,Bahrain,Qualifying,2026-10-03 16:00,2026-10-03T08:00:00Z,+08:00,1791043200,28.5,42.7,79,1006.4,5.4,326,1,,92,1.3,7,,,,,11730,forecast,Sepang,sepang;malaysia;kuala
-2026,16,Bahrain Grand Prix,Kuala Lumpur,Bahrain,Race,2026-10-04 15:00,2026-10-04T07:00:00Z,+08:00,1791126000,28.1,43.5,81,1006.3,6.4,232,1,,97,0.8,7,,,,,11731,forecast,Sepang,sepang;malaysia;kuala
+2026,16,Bahrain Grand Prix,Kuala Lumpur,Bahrain,Qualifying,2026-10-03 16:00,2026-10-03T08:00:00Z,+08:00,1791043200,28.3,31.8,82,1006.3,9.9,318,1,,96,1.7,6,,,,,11730,forecast,Sepang,sepang;malaysia;kuala
+2026,16,Bahrain Grand Prix,Kuala Lumpur,Bahrain,Race,2026-10-04 15:00,2026-10-04T07:00:00Z,+08:00,1791126000,27.0,30.5,86,1006.3,7.5,249,1,,100,1.3,6,,,,,11731,forecast,Sepang,sepang;malaysia;kuala
 2026,17,Singapore Grand Prix,Singapore,Singapore,Sprint Qualifying,2026-10-09 20:30,2026-10-09T12:30:00Z,+08:00,1791577800,29.4,33.7,68,1009.5,9.3,124,0,,40,0,17,,,,,11379,forecast,Singapore,singapore;marina_bay;marinabay
-2026,17,Singapore Grand Prix,Singapore,Singapore,Sprint,2026-10-10 17:00,2026-10-10T09:00:00Z,+08:00,1791651600,30.2,42.4,63,1009.5,7.0,193,1,,96,0.5,7,,,,,11383,forecast,Singapore,singapore;marina_bay;marinabay
+2026,17,Singapore Grand Prix,Singapore,Singapore,Sprint,2026-10-10 17:00,2026-10-10T09:00:00Z,+08:00,1791651600,30.2,33.7,63,1009.5,7.0,193,1,,96,0.5,6,,,,,11383,forecast,Singapore,singapore;marina_bay;marinabay
 2026,17,Singapore Grand Prix,Singapore,Singapore,Qualifying,2026-10-10 21:00,2026-10-10T13:00:00Z,+08:00,1791666000,26.4,30.7,88,1010.3,2.0,100,0,,100,0,19,,,,,11384,forecast,Singapore,singapore;marina_bay;marinabay
 2026,17,Singapore Grand Prix,Singapore,Singapore,Race,2026-10-11 20:00,2026-10-11T12:00:00Z,+08:00,1791748800,28.2,32.5,84,1010.1,1.0,158,0,,61,0.1,18,,,,,11388,forecast,Singapore,singapore;marina_bay;marinabay
