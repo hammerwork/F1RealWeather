@@ -33,7 +33,9 @@ FIRST_YEAR = 2023
 SESSIONS = ['Sprint Qualifying', 'Sprint Shootout', 'Sprint', 'Qualifying', 'Race']
 SESSION_ORDER = {'Sprint Shootout': 0, 'Sprint Qualifying': 0, 'Sprint': 1, 'Qualifying': 2, 'Race': 3}
 FORECAST_DAYS = 16
-TRACK_A, TRACK_B = 4.3, 0.0179      # track-temp estimate for forecasts (see forecast_row)
+TRACK_A, TRACK_B = 4.3, 0.0179      # dry track-temp estimate for forecasts (see forecast_row)
+TRACK_WET = 3.5                     # wet track: water keeps it near air temp (median of 20 wet sessions: +4.9)
+RAIN_PROB_MIN = 50                  # forecast rain only counts when the model gives it >= 50 %
 
 # OpenF1 circuit_short_name -> (name shown in the app, lat, lon, AC track-folder keywords)
 # A circuit missing here still works: it is geocoded by its location name and matched on its own name.
@@ -184,7 +186,8 @@ def meteo_hour(lat, lon, when_utc, forecast):
     day = t.strftime('%Y-%m-%d')
     params = {'latitude': lat, 'longitude': lon, 'start_date': day, 'end_date': day, 'timezone': 'GMT',
               'hourly': 'temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,'
-                        'cloud_cover,precipitation,shortwave_radiation,surface_pressure'}
+                        'cloud_cover,precipitation,shortwave_radiation,surface_pressure'
+                        + (',precipitation_probability' if forecast else '')}
     bases = [FORECAST] if forecast else [ARCHIVE, FORECAST]   # archive lags ~5 days; forecast covers that gap
     for base in bases:
         try:
@@ -261,22 +264,29 @@ def timing_row(s, meeting, rnd):
 def forecast_row(s, meeting, rnd):
     """Upcoming session: Open-Meteo forecast for the start hour. Track temperature is estimated
     from air temperature and solar radiation: track = air + 4.3 + 0.0179 * shortwave (W/m²),
-    fitted on 95 dry 2023-2026 sessions (RMSE 4.2 °C; Open-Meteo air vs timing air RMSE 1.3 °C)."""
+    fitted on 95 dry 2023-2026 sessions (RMSE 4.2 °C; Open-Meteo air vs timing air RMSE 1.3 °C).
+    In rain the sun term is dropped: a wet track stays a few degrees above air temperature
+    (wet 2023-2026 timing sessions: median +4.9 °C, steady rain +1 to +4 °C).
+    Rain intensity is capped one step lower than for measured sessions, because a forecast gives an
+    hourly (often 3-hourly) total and a probability, not the rain actually falling at lights out."""
     row, (lat, lon), utc = base_row(s, meeting, rnd)
     m = meteo_hour(lat, lon, utc, forecast=True)
     if not m or m.get('temperature_2m') is None:
         return None
     air = m['temperature_2m']
     sw = m.get('shortwave_radiation') or 0
-    track = air + TRACK_A + TRACK_B * sw
     precip, cloud, hum = m.get('precipitation') or 0, m.get('cloud_cover'), m.get('relative_humidity_2m')
-    wet = precip >= 0.3
+    prob = m.get('precipitation_probability')
+    wet = precip >= 0.3 and (prob is None or prob >= RAIN_PROB_MIN)
+    track = air + (TRACK_WET if wet else TRACK_A + TRACK_B * sw)
+    # forecast rain level: light rain up to 2.5 mm/h, rain up to 7.5, heavy above
+    level = (6 if precip < 2.5 else 7 if precip < 7.5 else 8) if wet else None
     row.update({
         'air_c': r1(air), 'track_c': r1(track), 'humidity_pct': r1(hum),
         'pressure_hpa': r1(m.get('surface_pressure')), 'wind_kmh': r1(m.get('wind_speed_10m')),
         'wind_dir_deg': round(m['wind_direction_10m']) if m.get('wind_direction_10m') is not None else '',
         'rain': 1 if wet else 0, 'rain_frac': '', 'cloud_pct': cloud if cloud is not None else '',
-        'precip_mm': precip, 'pure_weather': pure_weather(wet, wet, cloud, precip, hum),
+        'precip_mm': precip, 'pure_weather': level if wet else pure_weather(False, False, cloud, precip, hum),
         'air_min': '', 'air_max': '', 'track_min': '', 'track_max': '', 'source': 'forecast',
     })
     return row
