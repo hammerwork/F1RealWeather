@@ -19,6 +19,7 @@ GitHub Action (every 3 h)                     this repo                        e
 | `app/F1RealWeather/data/db_url.txt` | The address every app downloads the database from (one line) |
 | `data/f1_weather_db.csv` | The shared database, one row per session (updated by the Action) |
 | `data/f1_weather_segments.csv` | Q1 / Q2 / Q3 (and SQ1–SQ3) conditions for every qualifying (updated by the Action) |
+| `data/f1_weather_overrides.csv` | Hand-edited visual corrections (haze/mist, sky type) — edit directly on GitHub |
 | `tools/update_db.py` | Builds / updates the database. Python 3.8+, no extra packages |
 | `.github/workflows/update-f1-weather.yml` | Runs the updater every 3 hours and commits changes |
 | `SETUP.md` | Step-by-step setup and maintenance guide |
@@ -75,6 +76,14 @@ Each row is a **snapshot of the segment's final laps** (players race against the
 - The app freezes everything (Pure dynamics off), so conditions never change during a session.
 - The first Action run after adding this file fills in all past qualifying sessions (time budget
   25 min per run; anything left is done on the next run).
+
+## Overrides file
+
+`year, event, session, segment, pure_weather, mist_pct, note` — edited by hand, never touched by the
+Action. The app downloads it with the database and applies it on top (sky type and mist only; rain,
+temperatures and wind stay measured). `event` matches part of the circuit / display / meeting name
+or a track keyword; empty `session` / `segment` = all. Example: `2026,sepang,,,17,50,Haze`.
+Removing a line undoes it at the next game start.
 
 ## License
 
