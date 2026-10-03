@@ -1,1 +1,0 @@
-https://raw.githubusercontent.com/hammerwork/F1RealWeather/refs/heads/main/data/f1_weather_db.csv
