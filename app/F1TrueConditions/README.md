@@ -1,6 +1,6 @@
 # F1 True Conditions — real F1 session conditions for Pure Planner
 
-Version 1.9 · CSP Lua app for Assetto Corsa. Pick an F1 circuit, a season (2023 → today) and a session
+Version 1.9.1 · CSP Lua app for Assetto Corsa. Pick an F1 circuit, a season (2023 → today) and a session
 (Sprint Qualifying/Shootout, Sprint, Qualifying, Race) and apply the conditions the real
 session started in to Pure Planner: air temp, track temp, humidity, wind speed/direction,
 sky (cloud cover) and rain.
@@ -83,15 +83,19 @@ The timing feed has no visibility or haze data, so `data/f1_weather_overrides.cs
 to the shared CSV, so changes reach everyone at their next game start) lets you correct the look:
 
 ```
-year,event,session,segment,pure_weather,mist_pct,note
-2026,sepang,,,17,50,Haze across Malaysia (scattered clouds + 50% mist)
+year,event,session,segment,when,pure_weather,mist_pct,note
+2026,sepang,,,dry,17,35,Haze across Malaysia (dry sessions only)
+2026,sepang,,,rain,,10,Light mist when it rains
 ```
 
 - `event`: part of the circuit / display / meeting name or a track keyword (`sepang`).
 - `session`: `Qualifying`, `Race`, … — empty or `*` = the whole weekend.
 - `segment`: `Q1`/`Q2`/`Q3` (`SQ1`…) — empty or `*` = all.
+- `when`: `dry` (no rain falling — the default when empty), `rain` (raining) or `any`. A dry haze
+  line never changes a rainy session or segment; add a separate `rain` line for those.
 - `pure_weather`: Pure sky type (15 clear, 16 few, 17 scattered, 18 broken, 19 overcast, 23 haze).
-  Only the sky changes; rain and track surface stay as measured.
+  Whether it rains always comes from the data. In rain only rain types count (6 light rain, 7 rain,
+  8 heavy rain) and set the rain strength; anything else is ignored there.
 - `mist_pct`: Pure mist 0–100 (empty = automatic from humidity).
 - Empty value = keep the data's value; later lines win. Overridden sessions show `[override]`.
 

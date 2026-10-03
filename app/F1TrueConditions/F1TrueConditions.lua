@@ -1,4 +1,4 @@
--- F1 True Conditions v1.9 — real F1 session conditions as Pure Planner presets
+-- F1 True Conditions v1.9.1 — real F1 session conditions as Pure Planner presets
 --
 -- Auto mode (default on for VRC Formula Alpha cars):
 --   * At session load the app writes the matching plan to Pure Planner's Plans\last_used.json
@@ -232,9 +232,11 @@ end
 
 -- Overrides (data\f1_weather_overrides.csv, also downloaded next to the shared CSV): hand-made
 -- corrections for what the timing feed can't see, e.g. haze. Columns:
---   year, event, session, segment, pure_weather, mist_pct, note
+--   year, event, session, segment, when, pure_weather, mist_pct, note
 -- event = part of the circuit / display / meeting name or a track keyword ('sepang');
 -- session and segment empty or * = all; later lines win. Empty value = keep the data's value.
+-- when = dry (default: no rain falling), rain (raining), any. So a dry haze line never touches
+-- a rainy session/segment; add a separate 'rain' line to tune those.
 local isOvrRow = function(r) return r.year and r.event and r.event ~= '' end
 local ovr = { rows = {}, source = '' }
 
@@ -279,12 +281,18 @@ local function effRow(r, segIndex)
       for _, k in ipairs(SEG_FIELDS) do if g[k] ~= nil and g[k] ~= '' then e[k] = g[k] end end
       e.segLabel = g.label
     end
+    -- raining or not is decided by the data, before any override
+    if not e.track_state or e.track_state == '' then e.track_state = RAIN_PRESET[e.pure_weather] and 'rain' or 'dry' end
+    if e.track_state == 'wet' and e.rain == 1 then e.track_state = 'rain' end
+    local raining = e.track_state == 'rain'
     for _, o in ipairs(ovr.rows) do
-      if ovrMatches(o, e, e.segLabel) then
+      local when = (o.when or ''):lower()
+      if when == '' or when == '*' then when = 'dry' end
+      local fits = when == 'any' or (when == 'rain') == raining
+      if fits and ovrMatches(o, e, e.segLabel) then
         if o.pure_weather then
-          -- the override only changes the sky: rain / track surface stay as measured
-          if not e.track_state or e.track_state == '' then e.track_state = RAIN_PRESET[e.pure_weather] and 'rain' or 'dry' end
-          e.pure_weather = o.pure_weather
+          -- sky only: dry stays dry. In rain the type sets the rain strength, so only rain types count there.
+          if not raining or RAIN_PRESET[o.pure_weather] then e.pure_weather = o.pure_weather end
         end
         if o.mist_pct then e.mist_pct = o.mist_pct end
         e.overridden = true
