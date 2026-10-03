@@ -1,2 +1,2 @@
-year,event,session,segment,pure_weather,mist_pct,note
-2026,sepang,,,17,35,Haze across Malaysia during the GP weekend (scattered clouds + 35% mist)
+year,event,session,segment,when,pure_weather,mist_pct,note
+2026,sepang,,,dry,17,35,Haze across Malaysia: scattered clouds + 35% mist (dry sessions only)
