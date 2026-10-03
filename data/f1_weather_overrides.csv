@@ -1,6 +1,3 @@
-year,event,session,segment,when,car,pure_weather,mist_pct,grip_pct,note
-2026,sepang,Qualifying,,dry,vrc_formula_alpha_2026,17,35,95,Haze across Malaysia: scattered clouds + 35% mist (dry sessions only)
-2026,madrid,,,dry,vrc_formula_alpha_2026,,,109,
-
-
-
+year,event,session,segment,when,car,pure_weather,mist_pct,grip_pct,surfaces,note
+2026,sepang,,,dry,vrc_formula_alpha_2026,17,35,95,ROAD;CURBS;ASPHALT;ENTRY-EXIT,Haze across Malaysia: scattered clouds + 35% mist (dry sessions only)
+,,,,,,,,,,
