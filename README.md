@@ -79,10 +79,11 @@ Each row is a **snapshot of the segment's final laps** (players race against the
 
 ## Overrides file
 
-`year, event, session, segment, pure_weather, mist_pct, note` — edited by hand, never touched by the
+`year, event, session, segment, when, pure_weather, mist_pct, note` — edited by hand, never touched by the
 Action. The app downloads it with the database and applies it on top (sky type and mist only; rain,
 temperatures and wind stay measured). `event` matches part of the circuit / display / meeting name
-or a track keyword; empty `session` / `segment` = all. Example: `2026,sepang,,,17,50,Haze`.
+or a track keyword; empty `session` / `segment` = all. `when` = `dry` (default), `rain` or `any`,
+so dry-weather haze never changes a rainy session. Example: `2026,sepang,,,dry,17,35,Haze`.
 Removing a line undoes it at the next game start.
 
 ## License
