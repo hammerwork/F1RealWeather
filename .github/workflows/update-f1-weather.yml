@@ -30,12 +30,13 @@ jobs:
 
       - name: Commit if changed
         run: |
-          if git diff --quiet -- "$WEATHER_DIR/data/f1_weather_db.csv"; then
+          git add -N "$WEATHER_DIR/data/f1_weather_segments.csv" 2>/dev/null || true
+          if git diff --quiet -- "$WEATHER_DIR/data/"; then
             echo "No changes."
             exit 0
           fi
           git config user.name  "f1-weather-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$WEATHER_DIR/data/f1_weather_db.csv"
+          git add "$WEATHER_DIR/data/f1_weather_db.csv" "$WEATHER_DIR/data/f1_weather_segments.csv"
           git commit -m "Update F1 weather database ($(date -u +'%Y-%m-%d %H:%M UTC'))"
           git push
