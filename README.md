@@ -1,6 +1,6 @@
-# F1 Real Weather
+# F1 True Conditions
 
-A CSP Lua app for Assetto Corsa that loads the **real conditions of F1 qualifying, sprint and
+A CSP Lua app for Assetto Corsa (formerly *F1 Real Weather*) that loads the **real conditions of F1 qualifying, sprint and
 race sessions (2023 → today)** into [Pure Planner](https://www.overtake.gg/threads/pure-planner.291023/).
 Every user's app downloads the shared database from this repository at start-up, and a GitHub
 Action keeps it up to date: forecasts before a Grand Prix, official timing data afterwards.
@@ -15,8 +15,8 @@ GitHub Action (every 3 h)                     this repo                        e
 
 | Path | What it is |
 |---|---|
-| `app/F1RealWeather/` | The app. Copy to `assettocorsa\apps\lua\F1RealWeather\` |
-| `app/F1RealWeather/data/db_url.txt` | The address every app downloads the database from (one line) |
+| `app/F1TrueConditions/` | The app (source). Users install the zip from **Releases** |
+| `app/F1TrueConditions/data/db_url.txt` | The address every app downloads the database from (one line) |
 | `data/f1_weather_db.csv` | The shared database, one row per session (updated by the Action) |
 | `data/f1_weather_segments.csv` | Q1 / Q2 / Q3 (and SQ1–SQ3) conditions for every qualifying (updated by the Action) |
 | `data/f1_weather_overrides.csv` | Hand-edited visual corrections (haze/mist, sky type) — edit directly on GitHub |
@@ -35,6 +35,9 @@ GitHub Action (every 3 h)                     this repo                        e
 | Track temperature for forecasts | Estimated | `track = air + 4.3 + 0.0179 × solar radiation (W/m²)`, fitted on 95 dry 2023–2026 sessions (typical error ±4 °C). Replaced by the measured value after the session. |
 | Qualifying segments Q1 / Q2 / Q3 | **OpenF1** — `api.openf1.org/v1/race_control`, `/weather`, `/laps`, `/drivers` | Segment = first *GREEN LIGHT – PIT EXIT OPEN* to its *CHEQUERED FLAG* (`qualifying_phase` 1–3). Conditions = the last 5 minutes (final laps); plus the real fastest lap of the segment. |
 | New circuits (not in the built-in list) | **Open-Meteo Geocoding API** | Coordinates found from the location name; the circuit name becomes the track keyword. |
+
+OpenF1 is an unofficial community project and not affiliated with Formula 1. Open-Meteo data is
+CC BY 4.0 — credit "Weather data by Open-Meteo.com" if you publish it.
 
 ## Database columns
 
