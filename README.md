@@ -178,5 +178,5 @@ OpenF1 is an unofficial project, and F1 True Conditions is not affiliated with F
 
 ## Credits
 
-App and data pipeline by **Christoffer**. Custom Shaders Patch by **x4fab**. Pure and Pure Planner
+App and data pipeline by **Me**. Custom Shaders Patch by **x4fab**. Pure and Pure Planner
 by **Peter Boese**. Weather data by OpenF1 and Open-Meteo.com.
