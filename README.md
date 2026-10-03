@@ -36,9 +36,6 @@ GitHub Action (every 3 h)                     this repo                        e
 | Qualifying segments Q1 / Q2 / Q3 | **OpenF1** — `api.openf1.org/v1/race_control`, `/weather`, `/laps`, `/drivers` | Segment = first *GREEN LIGHT – PIT EXIT OPEN* to its *CHEQUERED FLAG* (`qualifying_phase` 1–3). Conditions = the last 5 minutes (final laps); plus the real fastest lap of the segment. |
 | New circuits (not in the built-in list) | **Open-Meteo Geocoding API** | Coordinates found from the location name; the circuit name becomes the track keyword. |
 
-OpenF1 is an unofficial community project and not affiliated with Formula 1. Open-Meteo data is
-CC BY 4.0 — credit "Weather data by Open-Meteo.com" if you publish it.
-
 ## Database columns
 
 `year, round, meeting, circuit, country, session, local_start, utc_start, gmt_offset, stamp_ts,
