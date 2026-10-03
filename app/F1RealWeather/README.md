@@ -49,6 +49,42 @@ plan). The footer turns green when Pure Planner confirms the conditions.
 The panel scales with your screen: designed at 1440p, x0.75 at 1080p, x1.5 at 4K. *Pit panel size*
 in the main window adds your own adjustment (60–160 %). Turn it off with *Show weather panel in the pits*.
 
+### Qualifying Q1 / Q2 / Q3
+
+Qualifying (and sprint qualifying) can use each segment instead of the session start. Pick
+**Q1, Q2 or Q3** under the Qualifying column in the pit panel (or the *Segment* list in the main
+window); the choice is remembered and also used by the automatic loading.
+
+Each segment is a **snapshot of its final laps**: the conditions of the last 5 minutes before the
+chequered flag, at that time of day, with the real fastest lap of the segment as a target
+(*Real best lap*). Nothing changes during the AC session: rain, wetness and standing water are
+fixed (all Pure dynamics off), so every attempt is made in the same conditions.
+
+Track surface: *Raining*, *Wet* (rain stopped < ~12 min ago), *Damp*, *Drying* or *Dry*. How long
+ago the rain stopped is scaled by track temperature (a cold night track dries slowly). Example,
+Las Vegas 2025: Q1 raining (RUS 1:53.144), Q2 wet (RUS 1:50.935), Q3 damp (NOR 1:47.934).
+
+All other sessions (race, sprint, qualifying without segments) are frozen the same way at their
+start-of-session conditions.
+
+### Overrides (haze, sky corrections)
+
+The timing feed has no visibility or haze data, so `data/f1_weather_overrides.csv` (downloaded next
+to the shared CSV, so changes reach everyone at their next game start) lets you correct the look:
+
+```
+year,event,session,segment,pure_weather,mist_pct,note
+2026,sepang,,,17,50,Haze across Malaysia (scattered clouds + 50% mist)
+```
+
+- `event`: part of the circuit / display / meeting name or a track keyword (`sepang`).
+- `session`: `Qualifying`, `Race`, … — empty or `*` = the whole weekend.
+- `segment`: `Q1`/`Q2`/`Q3` (`SQ1`…) — empty or `*` = all.
+- `pure_weather`: Pure sky type (15 clear, 16 few, 17 scattered, 18 broken, 19 overcast, 23 haze).
+  Only the sky changes; rain and track surface stay as measured.
+- `mist_pct`: Pure mist 0–100 (empty = automatic from humidity).
+- Empty value = keep the data's value; later lines win. Overridden sessions show `[override]`.
+
 ### Manual
 
 1. Open **F1 Real Weather**, choose circuit, year and session, press **Apply to Pure Planner**.

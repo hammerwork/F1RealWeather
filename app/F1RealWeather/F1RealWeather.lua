@@ -1,4 +1,4 @@
--- F1 Real Weather v1.1 — real F1 session conditions as Pure Planner presets
+-- F1 Real Weather v1.8 — real F1 session conditions as Pure Planner presets
 --
 -- Auto mode (default on for VRC Formula Alpha cars):
 --   * At session load the app writes the matching plan to Pure Planner's Plans\last_used.json
@@ -13,6 +13,10 @@
 local APP_DIR     = ac.dirname()
 local DB_BUNDLED  = APP_DIR .. '\\data\\f1_weather_db.csv'
 local DB_CACHE    = APP_DIR .. '\\data\\f1_weather_db_online.csv'
+local SEG_BUNDLED = APP_DIR .. '\\data\\f1_weather_segments.csv'       -- Q1/Q2/Q3 conditions
+local SEG_CACHE   = APP_DIR .. '\\data\\f1_weather_segments_online.csv'
+local OVR_BUNDLED = APP_DIR .. '\\data\\f1_weather_overrides.csv'      -- hand-made visual corrections
+local OVR_CACHE   = APP_DIR .. '\\data\\f1_weather_overrides_online.csv'
 -- URL of the shared database everyone downloads (one line; set by the mod author in data\\db_url.txt)
 local OFFICIAL_URL = ((io.load(APP_DIR .. '\\data\\db_url.txt', '') or ''):match('^%s*(%S+)') or '')
 if OFFICIAL_URL:find('YOUR_', 1, true) then OFFICIAL_URL = '' end   -- placeholder not filled in yet
@@ -33,7 +37,8 @@ local settings = ac.storage({
   pitPanel    = true,          -- show the weather panel in the pit / setup screen
   pitX        = 40,
   pitY        = 160,
-  pitSize     = 1.0,           -- personal size multiplier on top of screen-resolution scaling
+  pitSize     = 1.0,
+  qSeg        = 1,             -- qualifying segment to use: 1 = Q1, 2 = Q2, 3 = Q3           -- personal size multiplier on top of screen-resolution scaling
 })
 
 ---------------------------------------------------------------------------------------------------
@@ -122,9 +127,14 @@ local NUMERIC = {
   year = true, stamp_ts = true, air_c = true, track_c = true, humidity_pct = true, pressure_hpa = true,
   wind_kmh = true, wind_dir_deg = true, rain = true, rain_frac = true, cloud_pct = true, precip_mm = true,
   pure_weather = true, air_min = true, air_max = true, track_min = true, track_max = true, round = true,
+  segment = true, best_lap_s = true, mist_pct = true,
 }
 
-local function parseCsv(text)
+local function isSessionRow(r) return r.circuit and r.circuit ~= '' and r.year and r.session end
+local function isSegmentRow(r) return r.session_key and r.session_key ~= '' and (r.segment or 0) >= 1 and r.air_c end
+
+local function parseCsv(text, keep, noNumeric)
+  keep = keep or isSessionRow
   local rows, header = {}, nil
   for line in (text .. '\n'):gmatch('([^\r\n]*)\r?\n') do
     if line ~= '' then
@@ -135,10 +145,10 @@ local function parseCsv(text)
         local r = {}
         for k = 1, #header do
           local key, v = header[k], f[k]
-          if NUMERIC[key] then v = tonumber(v) end
+          if NUMERIC[key] and not (noNumeric and noNumeric[key]) then v = tonumber(v) end
           r[key] = v
         end
-        if r.circuit and r.circuit ~= '' and r.year and r.session then rows[#rows + 1] = r end
+        if keep(r) then rows[#rows + 1] = r end
       end
     end
   end
@@ -174,11 +184,116 @@ local function indexDb(rows, source)
   db.rows, db.circuits, db.byName, db.source = rows, list, byCircuit, source
 end
 
+-- Qualifying segments (Q1/Q2/Q3, SQ1/SQ2/SQ3): separate file, attached to their session row as r.segs
+local QUALI = { ['Qualifying'] = true, ['Sprint Qualifying'] = true, ['Sprint Shootout'] = true }
+local segDb = { rows = {}, source = '' }
+
+local function attachSegments(segRows, source)
+  local byKey = {}
+  for _, g in ipairs(segRows) do
+    byKey[g.session_key] = byKey[g.session_key] or {}
+    byKey[g.session_key][g.segment] = g
+  end
+  for _, r in ipairs(db.rows) do
+    local s = byKey[tostring(r.session_key)]
+    r.segs, r._eff = nil, nil
+    if s and QUALI[r.session] then
+      local list = {}
+      for i = 1, 3 do if s[i] then list[#list + 1] = s[i] end end
+      if #list > 0 then r.segs = list end
+    end
+  end
+  segDb.rows, segDb.source = segRows, source
+end
+
+local function loadSegments()
+  local cached = parseCsv(io.load(SEG_CACHE, '') or '', isSegmentRow)
+  local bundled = parseCsv(io.load(SEG_BUNDLED, '') or '', isSegmentRow)
+  if #cached > 0 and #cached >= #bundled then attachSegments(cached, 'online copy') else attachSegments(bundled, 'bundled') end
+end
+
+-- The row actually applied: for qualifying with segments, the chosen Q1/Q2/Q3 overrides the
+-- start-of-session values (time, temperatures, wind, rain, track state).
+local SEG_FIELDS = { 'air_c', 'track_c', 'humidity_pct', 'wind_kmh', 'wind_dir_deg', 'rain', 'rain_frac',
+                     'pure_weather', 'local_start', 'stamp_ts', 'source', 'track_state', 'best_lap', 'best_driver', 'mist_pct' }
+local STATE_TEXT = { rain = 'raining', wet = 'wet, no rain', damp = 'damp', drying = 'drying', dry = 'dry' }
+local function stateText(g)
+  if g.track_state == 'wet' and g.rain == 1 then return 'raining' end
+  return STATE_TEXT[g.track_state] or (g.rain == 1 and 'raining' or 'dry')
+end
+
+-- Overrides (data\f1_weather_overrides.csv, also downloaded next to the shared CSV): hand-made
+-- corrections for what the timing feed can't see, e.g. haze. Columns:
+--   year, event, session, segment, pure_weather, mist_pct, note
+-- event = part of the circuit / display / meeting name or a track keyword ('sepang');
+-- session and segment empty or * = all; later lines win. Empty value = keep the data's value.
+local isOvrRow = function(r) return r.year and r.event and r.event ~= '' end
+local ovr = { rows = {}, source = '' }
+
+local function ovrMatches(o, r, segLabel)
+  if o.year ~= r.year then return false end
+  local ev = o.event:lower()
+  local hay = ((r.display or '') .. '|' .. (r.circuit or '') .. '|' .. (r.meeting or '') .. '|' .. (r.track_keywords or '')):lower()
+  if not hay:find(ev, 1, true) then return false end
+  local ses = (o.session or ''):lower()
+  if ses ~= '' and ses ~= '*' and ses ~= (r.session or ''):lower() then return false end
+  local seg = tostring(o.segment or ''):upper()
+  if seg ~= '' and seg ~= '*' then
+    if not segLabel then return false end
+    if seg ~= segLabel:upper() and ('Q' .. seg) ~= segLabel:upper() and ('SQ' .. seg) ~= segLabel:upper() then return false end
+  end
+  return true
+end
+
+local function clearEff() for _, r in ipairs(db.rows or {}) do r._eff = nil end end
+
+local function loadOverrides()
+  local raw = { segment = true }                 -- 'Q2', 'SQ1', '2' …
+  local cached = parseCsv(io.load(OVR_CACHE, '') or '', isOvrRow, raw)
+  local bundled = parseCsv(io.load(OVR_BUNDLED, '') or '', isOvrRow, raw)
+  local online = (io.load(OVR_CACHE, '') or '') ~= ''
+  if online then ovr.rows, ovr.source = cached, 'online copy' else ovr.rows, ovr.source = bundled, 'bundled' end
+  clearEff()
+end
+
+-- The row actually applied: a copy of the session row, with the chosen Q1/Q2/Q3 merged in for
+-- qualifying (time, temperatures, wind, rain, track state) and the overrides on top.
+local function effRow(r, segIndex)
+  if not r then return r end
+  local i = 0
+  if r.segs then i = math.max(1, math.min(segIndex or settings.qSeg or 1, #r.segs)) end
+  r._eff = r._eff or {}
+  if not r._eff[i] then
+    local e = {}
+    for k, v in pairs(r) do if k ~= 'segs' and k ~= '_eff' then e[k] = v end end
+    if i > 0 then
+      local g = r.segs[i]
+      for _, k in ipairs(SEG_FIELDS) do if g[k] ~= nil and g[k] ~= '' then e[k] = g[k] end end
+      e.segLabel = g.label
+    end
+    for _, o in ipairs(ovr.rows) do
+      if ovrMatches(o, e, e.segLabel) then
+        if o.pure_weather then
+          -- the override only changes the sky: rain / track surface stay as measured
+          if not e.track_state or e.track_state == '' then e.track_state = RAIN_PRESET[e.pure_weather] and 'rain' or 'dry' end
+          e.pure_weather = o.pure_weather
+        end
+        if o.mist_pct then e.mist_pct = o.mist_pct end
+        e.overridden = true
+      end
+    end
+    r._eff[i] = e
+  end
+  return r._eff[i]
+end
+
 -- use the downloaded copy unless the bundled file (e.g. a newer app release) has more sessions
 local function loadDb()
   local cached = parseCsv(io.load(DB_CACHE, '') or '')
   local bundled = parseCsv(io.load(DB_BUNDLED, '') or '')
   if #cached >= 5 and #cached >= #bundled then indexDb(cached, 'online copy') else indexDb(bundled, 'bundled') end
+  loadSegments()
+  loadOverrides()
 end
 loadDb()
 
@@ -221,28 +336,52 @@ local PLAN_FOLDER = { [1] = 'Daycycle', [2] = 'Timed', [3] = 'Stamp' }
 
 local function clamp(v, a, b) v = tonumber(v) or a; return math.max(a, math.min(b, v)) end
 
+-- Fixed track surfaces (no rain falling): wetness, standing water
+local SURFACE = {
+  wet    = { 0.10, 0.30 },   -- rain stopped recently: still fully wet
+  damp   = { 0.05, 0.10 },
+  drying = { 0.02, 0.00 },   -- dry line forming
+}
+
+-- Everything is frozen for the whole AC session (all *_dyn = false, no rain variance), so a
+-- segment plays like a snapshot of its final laps and lap times stay comparable.
+local mistPct
+-- Pure mist in % (override from the overrides file, else automatic from humidity)
+mistPct = function(r)
+  if r.mist_pct then return clamp(r.mist_pct, 0, 100) end
+  local hum = clamp((r.humidity_pct or 50) / 100, 0, 1)
+  return hum > 0.93 and clamp((hum - 0.93) / 0.07 * 30, 0, 30) or 0
+end
+
 local function buildWeather(r)
   local id = r.pure_weather or 16
-  local rp = RAIN_PRESET[id]
-  local wet = rp ~= nil
+  local state = r.track_state
+  if state == nil or state == '' then state = RAIN_PRESET[id] and 'rain' or 'dry' end
+  if state == 'wet' and r.rain == 1 then state = 'rain' end        -- v1.6 files used 'wet' for raining
+  local rain, prob, var, wetness, water = 0, 0, 0, 0, 0
+  if state == 'rain' then
+    local rp = RAIN_PRESET[id] or RAIN_PRESET[6]
+    rain, prob, var, wetness, water = rp[1], 1, 0, rp[4], rp[5]
+  elseif SURFACE[state] then
+    wetness, water = SURFACE[state][1], SURFACE[state][2]
+  end
   local hum = clamp((r.humidity_pct or 50) / 100, 0, 1)
   local w = {
     index            = id,
-    rain_amount      = wet and rp[1] or 0,
-    rain_probability = wet and rp[2] or 0,
-    rain_variance    = wet and rp[3] or 0,
-    rain_wetness     = wet and rp[4] or 0,
-    rain_water       = wet and rp[5] or 0,
+    rain_amount      = rain,
+    rain_probability = prob,
+    rain_variance    = var,
+    rain_wetness     = wetness,
+    rain_water       = water,
     wind_direction   = clamp(r.wind_dir_deg or 0, 0, 360),
     wind_strength    = clamp(r.wind_kmh or 0, 0, 150),
     humidity         = hum,
-    mist             = hum > 0.93 and clamp((hum - 0.93) / 0.07 * 0.3, 0, 0.3) or 0,
+    mist             = mistPct(r) / 100,
     temp_air         = clamp(r.air_c, 0, 45),
     temp_road        = clamp(r.track_c, 0, 80),
     trans_auto = true, trans_look_A = 0.5, trans_look_B = 1, trans_data_A = 0.5, trans_data_B = 1,
     temp_air_dyn = false, temp_road_dyn = false, humidity_dyn = false, mist_dyn = false,
-    rain_amount_dyn = false,
-    rain_wetness_dyn = wet, rain_water_dyn = wet,
+    rain_amount_dyn = false, rain_wetness_dyn = false, rain_water_dyn = false,
   }
   for _, k in ipairs({ 'rain_amount', 'rain_probability', 'rain_variance', 'rain_wetness', 'rain_water', 'humidity',
                        'mist', 'temp_air', 'temp_road', 'wind_direction', 'wind_strength' }) do
@@ -273,7 +412,7 @@ end
 -- plan path relative to the Pure Planner Plans folder, without .json (what PURE.initPlan expects)
 local function planRelPath(r, realTime)
   return string.format('%s\\%s\\%d\\%02d_%s_%s', realTime and 'Stamp' or 'Daycycle', SUBFOLDER, r.year, r.round or 0,
-    safeName(displayName(r.circuit)), safeName(r.session))
+    safeName(r.display or displayName(r.circuit)), safeName(r.session) .. (r.segLabel and ('_' .. r.segLabel) or ''))
 end
 
 local function writePlan(r, realTime, alsoLastUsed)
@@ -353,6 +492,7 @@ end
 
 -- viaStartup: true at session load (Pure Planner will read last_used.json by itself first)
 local function applyRow(r, viaStartup)
+  r = effRow(r)
   local ok, rel, file = writePlan(r, settings.realTime, true)
   if not ok then sync.phase, sync.msg = 'failed', 'Could not write ' .. file; return end
   sync.row, sync.rel, sync.t, sync.tries = r, rel, 0, 0
@@ -559,7 +699,8 @@ local function dbUrl() return (settings.dbUrl ~= '' and settings.dbUrl) or OFFIC
 
 local function rowChanged(a, b)
   if not a or not b then return a ~= b end
-  for _, k in ipairs({ 'air_c', 'track_c', 'humidity_pct', 'wind_kmh', 'wind_dir_deg', 'pure_weather', 'rain', 'source' }) do
+  for _, k in ipairs({ 'air_c', 'track_c', 'humidity_pct', 'wind_kmh', 'wind_dir_deg', 'pure_weather', 'rain', 'source',
+                       'track_state', 'stamp_ts', 'mist_pct' }) do
     if a[k] ~= b[k] then return true end
   end
   return false
@@ -579,10 +720,29 @@ local function refreshDb(silent)
     local rows = parseCsv(response.body)
     if #rows < 5 then if not silent then sync.phase, sync.msg = 'failed', 'Download is not a valid F1 weather CSV.' end; return end
     io.save(DB_CACHE, response.body)
+    -- the Q1/Q2/Q3 file sits next to the main CSV
+    local segUrl = url:gsub('f1_weather_db%.csv', 'f1_weather_segments.csv')
+    refreshing = true
+    web.get(segUrl, function(err2, resp2)
+    refreshing = false
+    if not err2 and resp2 and resp2.body and not (resp2.status and resp2.status >= 400)
+       and #parseCsv(resp2.body, isSegmentRow) > 0 then
+      io.save(SEG_CACHE, resp2.body)
+    end
+    local ovrUrl = url:gsub('f1_weather_db%.csv', 'f1_weather_overrides.csv')
+    refreshing = true
+    web.get(ovrUrl, function(err3, resp3)
+    refreshing = false
+    if not err3 and resp3 and resp3.body and not (resp3.status and resp3.status >= 400)
+       and (resp3.body:find('event', 1, true)) then
+      io.save(OVR_CACHE, resp3.body)
+    end
     lastUpdate = os.date('%H:%M')
     local keepC, keepY, cur = sel.circuit and sel.circuit.name, sel.year, currentRow()
     local keepS = cur and cur.session
     indexDb(rows, 'online copy')
+    loadSegments()
+    loadOverrides()
     selectCircuit(db.byName[keepC] or detectTrack() or db.circuits[1], keepY, keepS)
     -- a new circuit (first race there) may only be recognisable with the new data
     if autoState.active or (settings.autoApply and not autoState.active and carMatches()) then
@@ -590,18 +750,22 @@ local function refreshDb(silent)
       local before = sync.row
       if autoState.active then
         local r = currentRow()
-        if r and rowChanged(before, r) then applyRow(r, wasWaiting) end
+        if r and rowChanged(before, effRow(r)) then applyRow(r, wasWaiting) end
       else
         autoApply(false)
       end
     elseif not silent then
-      sync.phase, sync.msg = 'confirmed', string.format('Database updated: %d sessions.', #rows)
+      sync.phase, sync.msg = 'confirmed', string.format('Database updated: %d sessions, %d qualifying segments.', #rows, #segDb.rows)
     end
+    end)
+    end)
   end)
 end
 
 local function resetToBundled()
   io.save(DB_CACHE, '')
+  io.save(SEG_CACHE, '')
+  io.save(OVR_CACHE, '')
   loadDb()
   selectCircuit(detectTrack() or db.circuits[1])
   sync.phase, sync.msg = 'confirmed', 'Using bundled database.'
@@ -673,9 +837,20 @@ pcall(function()
 end)
 local function pushF(f) if f then ui.pushDWriteFont(f) end end
 local function popF(f) if f then ui.popDWriteFont() end end
+-- text shrinks (down to 70 %) instead of being cut off when it is wider than its cell
 local function txt(text, size, p1, p2, align, color)
+  local room = p2.x - p1.x - 4
+  local ok, m = pcall(ui.measureDWriteText, text, size)
+  if ok and m and m.x > room and room > 0 then size = math.max(size * 0.7, size * room / m.x) end
   ui.dwriteDrawTextClipped(text, size, p1, p2, align or ui.Alignment.Center, ui.Alignment.Center, false, color or V.text)
 end
+
+-- short sky names for the narrow pit-panel columns
+local SKY_SHORT = {
+  [15] = 'Clear', [16] = 'Few clouds', [17] = 'Scattered', [18] = 'Broken', [19] = 'Overcast', [21] = 'Mist',
+  [23] = 'Haze', [3] = 'Lt drizzle', [4] = 'Drizzle', [6] = 'Light rain', [7] = 'Rain', [8] = 'Heavy rain',
+  [0] = 'Lt storm', [1] = 'Storm',
+}
 
 local SHORT = { ['Sprint Qualifying'] = 'Sprint Q', ['Sprint'] = 'Sprint', ['Qualifying'] = 'Qualifying', ['Race'] = 'Race' }
 local ROWS = {
@@ -685,16 +860,21 @@ local ROWS = {
   { 'Humidity (%)',   function(r) return fmt(r.humidity_pct, '%.0f') end },
   { 'Wind (km/h)',    function(r) return fmt(r.wind_kmh, '%.1f') .. ' ' .. compass(r.wind_dir_deg) end },
   false,
-  { 'Sky',            function(r) return WEATHER_NAMES[r.pure_weather] or tostring(r.pure_weather) end },
-  { 'Rain',           function(r)
-      if r.source == 'forecast' then return r.rain == 1 and 'Likely' or 'Unlikely' end
-      return r.rain == 1 and 'Wet start' or ((r.rain_frac or 0) > 0 and 'Later' or 'Dry') end },
-  { 'Local start',    function(r) return r.local_start and r.local_start:sub(12, 16) or '–' end },
+  { 'Sky',            function(r) return SKY_SHORT[r.pure_weather] or WEATHER_NAMES[r.pure_weather] or tostring(r.pure_weather) end },
+  { 'Haze / mist',    function(r) local m = mistPct(r); return m >= 1 and string.format('%d %%', math.floor(m + 0.5)) or '–' end },
+  { 'Track',          function(r)
+      local st = r.track_state
+      if st == 'rain' or (st == 'wet' and r.rain == 1) then return r.source == 'forecast' and 'Rain likely' or 'Raining' end
+      if st == 'wet' then return 'Wet' elseif st == 'damp' then return 'Damp' elseif st == 'drying' then return 'Drying' end
+      if r.source == 'forecast' then return r.rain == 1 and 'Rain likely' or 'Dry' end
+      return r.rain == 1 and 'Raining' or 'Dry' end },
+  { 'Time (local)',   function(r) return r.local_start and r.local_start:sub(12, 16) or '–' end },
+  { 'Real best lap',  function(r) return (r.best_lap and r.best_lap ~= '') and (r.best_lap .. ' ' .. (r.best_driver or '')) or '–' end },
   { 'Data',           function(r) return r.source == 'forecast' and 'Forecast' or 'Timing' end },
 }
 -- Base layout is designed at 1440p; everything is multiplied by pitScale() so the panel keeps
 -- the same proportions at 1080p (x0.75) and 4K (x1.5). settings.pitSize adds a personal tweak.
-local BASE = { W = 460, ROW = 26, HEAD = 44, COLHEAD = 30, FOOT = 34, M = 14, GAP = 9, LABEL = 130 }
+local BASE = { W = 460, ROW = 26, HEAD = 44, COLHEAD = 30, SEG = 28, FOOT = 34, M = 14, GAP = 9, LABEL = 130 }
 
 local function pitScale()
   local h = 1440
@@ -705,7 +885,7 @@ end
 local function pitSize(S)
   local n = 0
   for _, rr in ipairs(ROWS) do n = n + (rr and BASE.ROW or BASE.GAP) end
-  local h = BASE.M + BASE.HEAD + BASE.COLHEAD + n + 8 + BASE.FOOT + BASE.M
+  local h = BASE.M + BASE.HEAD + BASE.COLHEAD + BASE.SEG + n + 8 + BASE.FOOT + BASE.M
   return vec2(math.floor(BASE.W * S), math.floor(h * S))
 end
 local function pitHeight() return pitSize(pitScale()).y end
@@ -769,7 +949,8 @@ local function drawPit(size, isOverlay)
   local labelW = BASE.LABEL * S
   local colW = (size.x - M * 2 - labelW) / math.max(#list, 1)
   local top = M + HEAD
-  local bottomOfTable = top + COLHEAD
+  local SEGH = BASE.SEG * S
+  local bottomOfTable = top + COLHEAD + SEGH
   for _, rr in ipairs(ROWS) do bottomOfTable = bottomOfTable + (rr and ROW or GAP) end
 
   -- clickable column headers; the chosen session gets a red box
@@ -793,10 +974,44 @@ local function drawPit(size, isOverlay)
       (chosen or hovered) and V.text or V.dim)
     popF(F.bold)
   end
-  ui.drawLine(vec2(M, top + COLHEAD), vec2(size.x - M, top + COLHEAD), V.line, 1)
+  -- Q1 / Q2 / Q3 selector under each qualifying column that has segment data
+  local segY = top + COLHEAD + 3 * S
+  txt('Segment', fs(13), vec2(M + 4 * S, segY), vec2(M + labelW, segY + SEGH - 6 * S), ui.Alignment.Start, V.faint)
+  for i, s in ipairs(list) do
+    local x0 = M + labelW + (i - 1) * colW
+    if s.segs then
+      local n = #s.segs
+      local cur = math.min(settings.qSeg or 1, n)
+      local pad, gap = 8 * S, 3 * S
+      local pw = (colW - pad * 2 - gap * (n - 1)) / n
+      for k = 1, n do
+        local p1 = vec2(x0 + pad + (k - 1) * (pw + gap), segY)
+        local p2 = vec2(p1.x + pw, segY + SEGH - 6 * S)
+        ui.setCursor(p1)
+        if ui.invisibleButton('##seg' .. i .. '_' .. k, vec2(pw, p2.y - p1.y)) then
+          settings.qSeg = k
+          sel.idx = i
+          if on then applyManual(s) end
+        end
+        local hov = ui.itemHovered()
+        local active = on and i == sel.idx and k == cur
+        if active then ui.drawRectFilled(p1, p2, V.red, 4 * S)
+        else ui.drawRect(p1, p2, hov and V.dim or V.line, 4 * S, nil, 1) end
+        local g = s.segs[k]
+        local lbl = (g.label or ('Q' .. k)):gsub('^SQ', 'Q')
+        txt(lbl, fs(12), p1, p2, ui.Alignment.Center, (active or hov) and V.text or (k == cur and V.text or V.dim))
+        if hov then
+          ui.setTooltip(string.format('%s final laps %s  ·  air %s °C, track %s °C  ·  %s%s', g.label or '', (g.local_start or ''):sub(12, 16),
+            fmt(g.air_c, '%.1f'), fmt(g.track_c, '%.1f'), stateText(g),
+            (g.best_lap and g.best_lap ~= '') and ('\nReal best lap: ' .. g.best_lap .. ' ' .. (g.best_driver or '')) or ''))
+        end
+      end
+    end
+  end
+  ui.drawLine(vec2(M, top + COLHEAD + SEGH), vec2(size.x - M, top + COLHEAD + SEGH), V.line, 1)
 
   -- rows
-  local y = top + COLHEAD
+  local y = top + COLHEAD + SEGH
   for _, rr in ipairs(ROWS) do
     if not rr then
       ui.drawLine(vec2(M, y + GAP / 2), vec2(size.x - M, y + GAP / 2), V.line, 1)
@@ -805,8 +1020,10 @@ local function drawPit(size, isOverlay)
       txt(rr[1], fs(14), vec2(M + 4 * S, y), vec2(M + labelW, y + ROW), ui.Alignment.Start, V.dim)
       for i, s in ipairs(list) do
         local x0 = M + labelW + (i - 1) * colW
-        local col = (rr[1] == 'Rain' and s.rain == 1) and V.wet or ((on and i == sel.idx) and V.text or V.dim)
-        txt(rr[2](s), fs(14), vec2(x0, y), vec2(x0 + colW, y + ROW), ui.Alignment.Center, col)
+        local e = effRow(s)
+        local wetSurface = e.rain == 1 or e.track_state == 'wet' or e.track_state == 'damp' or e.track_state == 'drying'
+        local col = (rr[1] == 'Track' and wetSurface) and V.wet or ((on and i == sel.idx) and V.text or V.dim)
+        txt(rr[2](e), fs(14), vec2(x0, y), vec2(x0 + colW, y + ROW), ui.Alignment.Center, col)
       end
       y = y + ROW
     end
@@ -877,10 +1094,22 @@ function windowMain(dt)
     end)
   end
 
-  local r = currentRow()
+  local base = currentRow()
+  if base and base.segs then
+    ui.setNextItemWidth(ui.availableSpaceX())
+    local cur = math.min(settings.qSeg or 1, #base.segs)
+    ui.combo('##qseg', 'Segment: ' .. (base.segs[cur].label or ('Q' .. cur)), ui.ComboFlags.None, function()
+      for k, g in ipairs(base.segs) do
+        local txtLine = string.format('%s  %s  ·  %s °C / %s °C  ·  %s', g.label or ('Q' .. k), (g.local_start or ''):sub(12, 16),
+          fmt(g.air_c, '%.1f'), fmt(g.track_c, '%.1f'), stateText(g))
+        if ui.selectable(txtLine, k == cur) then settings.qSeg = k end
+      end
+    end)
+  end
+  local r = effRow(base)
   ui.separator()
   if r then
-    ui.textColored(r.meeting or '', C.accent)
+    ui.textColored((r.meeting or '') .. (r.segLabel and ('  ·  ' .. r.segLabel) or ''), C.accent)
     row('Local start', (r.local_start or '') .. '  (UTC' .. (r.gmt_offset or '') .. ')')
     row('Air', fmt(r.air_c, '%.1f °C') .. '   range ' .. fmt(r.air_min, '%.1f') .. '–' .. fmt(r.air_max, '%.1f'))
     row('Track', fmt(r.track_c, '%.1f °C') .. '   range ' .. fmt(r.track_min, '%.1f') .. '–' .. fmt(r.track_max, '%.1f'))
@@ -888,10 +1117,13 @@ function windowMain(dt)
     row('Wind', fmt(r.wind_kmh, '%.1f km/h') .. ' from ' .. compass(r.wind_dir_deg))
     row('Sky', (WEATHER_NAMES[r.pure_weather] or tostring(r.pure_weather)) ..
       (r.cloud_pct and string.format('  (%d%% cloud)', r.cloud_pct) or ''))
-    row('Rain', (r.rain == 1 and 'at start' or 'dry at start') ..
+    local m = mistPct(r)
+    row('Haze / mist', (m >= 1 and string.format('%d %%', math.floor(m + 0.5)) or 'none') .. (r.overridden and '  (override)' or ''))
+    if r.best_lap and r.best_lap ~= '' then row('Real best lap', r.best_lap .. '  ' .. (r.best_driver or '')) end
+    row('Track', r.segLabel and (stateText(r) .. ' (fixed for the session)') or (r.rain == 1 and 'raining at start' or 'dry at start') ..
       ((r.rain_frac or 0) > 0 and string.format(', wet %d%% of session', math.floor(r.rain_frac * 100 + 0.5)) or ''))
     row('Data', r.source == 'forecast' and 'Forecast (updates until the session, track temp estimated)' or 'Official timing weather station')
-    if ui.button('Apply to Pure Planner', vec2(ui.availableSpaceX(), 32)) then applyManual(r) end
+    if ui.button('Apply to Pure Planner', vec2(ui.availableSpaceX(), 32)) then applyManual(base) end
   end
 
   if sync.msg ~= '' then
