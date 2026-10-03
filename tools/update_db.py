@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""F1 Real Weather — database updater.
+"""F1 True Conditions — database updater.
 
 Builds data/f1_weather_db.csv: one row per F1 Qualifying / Sprint Qualifying / Sprint / Race
 from 2023 to the current season, with the conditions at the start of the session.
@@ -95,7 +95,7 @@ def get_json(url, params=None, tries=6):
         url = url + '?' + urllib.parse.urlencode(params)
     for attempt in range(tries):
         try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'F1RealWeather-updater/1.0'})
+            req = urllib.request.Request(url, headers={'User-Agent': 'F1TrueConditions-updater/1.9'})
             with urllib.request.urlopen(req, timeout=60) as r:
                 return json.loads(r.read().decode('utf-8'))
         except urllib.error.HTTPError as e:
