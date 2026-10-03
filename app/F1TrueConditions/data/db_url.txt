@@ -1,1 +1,1 @@
-
+https://raw.githubusercontent.com/hammerwork/F1TrueConditions/refs/heads/main/data/f1_weather_db.csv
